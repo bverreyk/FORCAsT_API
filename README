@@ -1,0 +1,34 @@
+# FORCAsT_API
+
+Python API for managing simulations with the FORCAsT v2.0 canopy exchange model with chemistry.
+
+This API provides a structured Python interface to:
+
+- generate FORCAsT input files
+- manage simulation directories
+- handle boundary and initial conditions
+- run simulations
+- read model output into **xarray datasets**
+- perform parameter scans and model experiments
+- interface with observational datasets
+
+The goal is to enable reproducible ecosystem-atmosphere modelling workflows around FORCAsT.
+
+---
+
+# Version
+
+FORCAsT_API Version: v0.1.0  
+Release date: 2026-03-06
+
+This version supports:
+
+- structured model configuration objects
+- automated run directory creation
+- input file generation (`inputn`)
+- boundary condition preparation
+- initial condition extraction from datasets
+- model execution with run verification
+- FORCAsT output parsing into `xarray`
+
+---
