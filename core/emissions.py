@@ -10,12 +10,12 @@ sys.path.append(os.path.join(pp))
 from utils.validate import validate_keys_strict
 
 class Emissions:
-    def __init__(self, EFsyn={'iso':3.73}, EFpl={'apin':0.021,'dlin':0.017}, bexp=[0.13,0.1,0.1,0.1,0.08,0.13,0.1,0.1,0.13,0.17,0.17,0.17,0.1],EFno=0.05):
+    def __init__(self, EFsyn={'iso':3.73}, EFpl={'apin':0.021,'dlim':0.017}, bexp=[0.13,0.1,0.1,0.1,0.08,0.13,0.1,0.1,0.13,0.17,0.17,0.17,0.1],EFno=0.05):
         self.EF_order = [
                 'iso',
                 'apin',
                 'bpin',
-                'dlin',
+                'dlim',
                 'omt',
                 'bcar',
                 'afar',
