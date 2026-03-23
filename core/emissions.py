@@ -27,6 +27,21 @@ class Emissions:
                 'mbo',
                 'oVOC',
         ]
+        self.bexp_order = [
+                'iso',
+                'apin+omt',
+                'bpin',
+                'dlim',
+                'meoh',
+                'acetaldehyde',
+                'acetone',
+                'mvk-mcr',
+                'mbo',
+                'bcar',
+                'afar',
+                'osqt',
+                'oVOC',
+        ]
         self.EFsyn = EFsyn
         self.EFpl  = EFpl
         self.bexp  = bexp
@@ -35,10 +50,19 @@ class Emissions:
         self._validate()
 
     def _validate(self):
-        if not isinstance(self.bexp, (list,tuple)):
-            raise TypeError("bexp must be list or tuple")
-        if len(self.bexp) != 13:
-            raise ValueError(f"Length of bexp ({len(self.bexp)}) must be equal to 13")
+        # Qllow dict, list, or tuple
+        if isinstance(self.bexp, (list,tuple)):
+            if len(self.bexp) != 13:
+                raise ValueError(f"Length of bexp ({len(self.bexp)}) must be equal to 13")
+            
+            # Convert to dictionary using bexp_order
+            self.bexp = dict(zip(self.bexp_order, self.bexp))
+
+        elif not isinstance(self.bexp, dict):
+            raise TypeError("EFsyn must be dict, list, or tuple")
+
+        # Validate keys strictly
+        validate_keys_strict(self.bexp, self.bexp_order)
 
         # Allow dict, list, or tuple
         if isinstance(self.EFsyn, (list, tuple)):

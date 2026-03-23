@@ -14,6 +14,7 @@ from pathlib import Path
 import subprocess
 import datetime as dt   
 import pandas as pd
+import numpy as np
 
 from FORCAsT_API.core.site import Site
 from FORCAsT_API.core.chemistry import Chemistry
@@ -555,7 +556,7 @@ class ForcastModel:
 
         write_line(f, get_string_dict(e['EFsyn'], e['EF_order'], "EFsyn", 3), "(EFsyn) ! Synthesis emissions factors [nmol m-2 s-1]")
         write_line(f, get_string_dict(e['EFpl'], e['EF_order'], "EFpl", 3), "(EFpl) ! Pool emissions factors [nmol m-2 s-1]")
-        write_line(f, get_string_array(e['bexp'], 3), "(bexp) ! exponential factor pool emissions")
+        write_line(f, get_string_dict(e['bexp'], e['bexp_order'], "bexp", 3), "(bexp) ! exponential factor pool emissions")
         write_line(f, f"{e['EFno']:.3f}", "(EFno) ! Soil NO emssion factor [nmol m-2 s-1]")
 
         # --- Resistances ---
@@ -615,6 +616,79 @@ class ForcastModel:
            )
        return None
 
+
+    def _check_boundary_conditions_for_nan(self, allow_all_nan_files=None):
+        """
+        Check boundary condition files for NaN values.
+    
+        Parameters
+        ----------
+        allow_all_nan_files : list or set, optional
+            Filenames that are allowed to contain only NaN values.
+    
+        Raises
+        ------
+        ValueError
+            If NaNs are found in non-allowed files, or mixed NaN/non-NaN data.
+        """
+    
+        if allow_all_nan_files is None:
+            allow_all_nan_files = set()
+        else:
+            allow_all_nan_files = set(allow_all_nan_files)
+    
+        run_dir = self.directory_manager.current_run_dir
+    
+        if run_dir is None:
+            raise RuntimeError("No active run directory.")
+    
+        data_dir = run_dir / "data"
+    
+        if not data_dir.exists():
+            raise FileNotFoundError("Boundary condition directory not found.")
+    
+        files_checked = []
+    
+        for file in data_dir.glob("*"):
+    
+            if not file.is_file():
+                continue
+    
+            try:
+                df = pd.read_csv(file, delim_whitespace=True, header=None)
+            except Exception as e:
+                raise RuntimeError(f"Failed to read boundary file: {file}") from e
+    
+            has_nan = df.isna().values.any()
+            all_nan = df.isna().values.all()
+    
+            # -------------------------------
+            # Case 1: file is allowed to be all NaN
+            # -------------------------------
+            if file.name in allow_all_nan_files:
+                if not all_nan:
+                    raise ValueError(
+                        f"{file.name} is expected to contain ONLY NaNs, "
+                        f"but contains valid values."
+                    )
+    
+            # -------------------------------
+            # Case 2: file is NOT allowed to have NaNs
+            # -------------------------------
+            else:
+                if has_nan:
+                    nan_locs = np.argwhere(df.isna().values)
+    
+                    raise ValueError(
+                        f"NaN values found in boundary condition file: {file.name}\n"
+                        f"First occurrences (row, col): {nan_locs[:5]}"
+                    )
+    
+            files_checked.append(file.name)
+    
+        if not files_checked:
+            raise RuntimeError("No boundary condition files found to validate.")
+
     def run(self, executable=None, force: bool = False, list_boundary_conditions: list = ()):
         """
         Execute FORCAsT inside the run directory.
@@ -666,6 +740,8 @@ class ForcastModel:
         try:
             os.chdir(run_dir)
     
+            self._check_boundary_conditions_for_nan()
+
             with open(log_file, "w") as log:
                 subprocess.run(
                     [f"./{executable}", str(input_file.name)],
@@ -673,7 +749,9 @@ class ForcastModel:
                     stderr=log,
                     check=True
                 )
-    
+        except:
+            print(f"Issue running {self.directory_manager.current_run_dir}. Confirm boundary conditions or run manually.")
+
         finally:
             os.chdir(original_cwd)
     
