@@ -25,6 +25,7 @@ from FORCAsT_API.core.radiation import Radiation
 from FORCAsT_API.core.ecosystem import PlantParameters, ResistanceParameters
 from FORCAsT_API.core.emissions import Emissions
 from FORCAsT_API.core.initialConditions import InitialConditions
+from FORCAsT_API.core.species_profiles import SpeciesProfiles
 from FORCAsT_API.core.directory_manager import DirectoryManager
 
 
@@ -44,6 +45,7 @@ class ForcastModel:
         emissions: Emissions = None,
         resistance: ResistanceParameters = None,
         initial_conditions: InitialConditions = None,
+        species_profiles: SpeciesProfiles = None,
         directory_manager: DirectoryManager = None,
     ):
         """
@@ -86,6 +88,7 @@ class ForcastModel:
         self.emissions          = self._ensure_instance(emissions, Emissions)
         self.resistance         = self._ensure_instance(resistance, ResistanceParameters)
         self.initial_conditions = self._ensure_instance(initial_conditions, InitialConditions)
+        self.species_profiles   = self._ensure_instance(species_profiles, SpeciesProfiles)
 
         self.directory_manager  = self._ensure_instance(directory_manager, DirectoryManager)
 
@@ -594,6 +597,12 @@ class ForcastModel:
         f.close()
         return input_file
 
+    def write_species_profiles(self):
+        if self.species_profiles is not None:
+            path = self.directory_manager.get_data_dir() / "init_profiles.dat"
+            self.species_profiles.write(path)
+        return None
+
     def create_run(self, model_run):
         run_dir = self.directory_manager.create_run(model_run)
         return run_dir
@@ -652,6 +661,9 @@ class ForcastModel:
         for file in data_dir.glob("*"):
     
             if not file.is_file():
+                continue
+
+            if "init_profiles.dat" == os.path.basename(file):
                 continue
     
             try:
@@ -727,6 +739,7 @@ class ForcastModel:
     
         # Ensure input file is written
         input_file = self.write_input()
+        self.write_species_profiles()
         for bconditions in list_boundary_conditions:
             self.fetch_boundary_conditions(bconditions)
     
@@ -737,23 +750,23 @@ class ForcastModel:
         log_file = run_dir / "run.log"
         original_cwd = os.getcwd()
     
-        try:
-            os.chdir(run_dir)
+#        try:
+        os.chdir(run_dir)
     
-            self._check_boundary_conditions_for_nan()
+        self._check_boundary_conditions_for_nan()
 
-            with open(log_file, "w") as log:
-                subprocess.run(
-                    [f"./{executable}", str(input_file.name)],
-                    stdout=log,
-                    stderr=log,
-                    check=True
-                )
-        except:
-            print(f"Issue running {self.directory_manager.current_run_dir}. Confirm boundary conditions or run manually.")
+        with open(log_file, "w") as log:
+            subprocess.run(
+                [f"./{executable}", str(input_file.name)],
+                stdout=log,
+                stderr=log,
+                check=True
+            )
+#        except:
+#            print(f"Issue running {self.directory_manager.current_run_dir}. Confirm boundary conditions or run manually.")
 
-        finally:
-            os.chdir(original_cwd)
+#        finally:
+        os.chdir(original_cwd)
     
         return out_dir
     

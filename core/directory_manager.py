@@ -161,9 +161,10 @@ class DirectoryManager:
         -------
         ForcastModel instance
         """
-    
-        run_dir = self.get_run_dir()
-    
+   
+        run_dir = self.runs_dir / run_name
+        self.current_run_dir = run_dir
+
         if not run_dir.exists():
             raise ValueError(f"Run '{run_name}' does not exist.")
     
