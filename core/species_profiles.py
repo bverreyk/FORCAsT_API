@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
-
+import numpy as np
 
 VALID_PROFILES = ('CONST', 'EXP', 'LINEAR', 'RH')
 
@@ -180,6 +180,219 @@ class SpeciesProfiles:
         lines = header + [e.to_line() for e in self.entries]
         filepath.write_text("\n".join(lines) + "\n")
         return filepath
+
+    def add_from_observations(
+        self,
+        species: int,
+        heights,
+        values,
+        profile_type: str = 'EXP',
+        piecewise: bool = False,
+        zmin: float = 0.,
+        zmax: float = 9999.,
+        default_above: float = None,
+        comment: str = '',
+    ) -> "SpeciesProfiles":
+        """
+        Add profile entries derived from observed (heights, values) data.
+
+        Non-piecewise: fits a single analytical function to all observations.
+        Piecewise: creates one entry per observation interval. Only CONST and
+        LINEAR are supported in piecewise mode.
+
+        In piecewise CONST mode each interval [heights[i], heights[i+1]) takes
+        the value values[i]. The final entry runs from heights[-1] to zmax using
+        default_above (if given) or values[-1] (if not).
+
+        In piecewise LINEAR mode each interval is an exact linear segment through
+        the two bounding observations. If default_above is given, a CONST entry
+        is appended above heights[-1].
+    
+        Parameters
+        ----------
+        species : int
+            Species index from module_parameters_ddw.f90.
+        heights : array-like
+            Measurement heights [m a.g.l.].
+        values : array-like
+            Measured concentrations [mol/mol] at each height.
+        profile_type : str
+            'CONST', 'LINEAR', or 'EXP'. Piecewise mode only accepts 'CONST'
+            and 'LINEAR'.
+        piecewise : bool
+            If True, produce one entry per observation interval.
+        zmin : float
+            Lower bound for the single fitted entry (non-piecewise only).
+        zmax : float
+            Upper ceiling of the last entry or default_above entry.
+        default_above : float or None
+            If given, append a CONST entry covering [max(heights), zmax) with
+            this value. Applies to piecewise mode only; ignored otherwise.
+        comment : str
+            Inline comment written to the file.
+        """
+        heights = np.asarray(heights, dtype=float)
+        values  = np.asarray(values,  dtype=float)
+    
+        order   = np.argsort(heights)
+        heights = heights[order]
+        values  = values[order]
+    
+        if piecewise:
+            if profile_type not in ('CONST', 'LINEAR'):
+                raise ValueError(
+                    f"piecewise mode only supports 'CONST' and 'LINEAR', "
+                    f"got '{profile_type}'."
+                )
+            if len(heights) < 2:
+                raise ValueError(
+                    "piecewise mode requires at least 2 observations."
+                )
+    
+            if profile_type == 'CONST':
+                for i in range(len(heights) - 1):
+                    self.add(
+                        species=species,
+                        profile='CONST',
+                        params=[float(values[i])],
+                        zmin=float(heights[i]),
+                        zmax=float(heights[i + 1]),
+                        comment=comment,
+                    )
+                top_value = float(default_above) if default_above is not None else float(values[-1])
+                self.add(
+                    species=species,
+                    profile='CONST',
+                    params=[top_value],
+                    zmin=float(heights[-1]),
+                    zmax=zmax,
+                    comment=comment,
+                )
+    
+            else:  # LINEAR
+                for i in range(len(heights) - 1):
+                    dz = float(heights[i + 1] - heights[i])
+                    c1 = float(values[i + 1] - values[i]) / dz
+                    c0 = float(values[i]) - c1 * float(heights[i])
+                    self.add(
+                        species=species,
+                        profile='LINEAR',
+                        params=[c0, c1],
+                        zmin=float(heights[i]),
+                        zmax=float(heights[i + 1]),
+                        comment=comment,
+                    )
+                if default_above is not None:
+                    self.add(
+                        species=species,
+                        profile='CONST',
+                        params=[float(default_above)],
+                        zmin=float(heights[-1]),
+                        zmax=zmax,
+                        comment=comment,
+                    )
+    
+        else:
+            if profile_type == 'CONST':
+                params = [float(np.mean(values))]
+    
+            elif profile_type == 'LINEAR':
+                c1, c0 = np.polyfit(heights, values, 1)
+                params = [float(c0), float(c1)]
+    
+            elif profile_type == 'EXP':
+                if np.any(values <= 0):
+                    raise ValueError(
+                        "EXP fit requires all values to be positive."
+                    )
+                slope, intercept = np.polyfit(heights, np.log(values), 1)
+                params = [float(np.exp(intercept)), float(-slope)]
+    
+            else:
+                raise ValueError(
+                    f"Unsupported profile_type '{profile_type}'. "
+                    f"Must be one of 'CONST', 'LINEAR', 'EXP'."
+                )
+    
+            self.add(
+                species=species,
+                profile=profile_type,
+                params=params,
+                zmin=zmin,
+                zmax=zmax,
+                comment=comment,
+            )
+    
+        return self
+
+    def set_rh_profile(
+        self,
+        species: int,
+        heights,
+        values,
+        default_above: float = None,
+        zmax: float = 9999.,
+        comment: str = '',
+    ) -> "SpeciesProfiles":
+        """
+        Replace all existing entries for a species with piecewise RH entries
+        derived directly from an observed relative humidity profile.
+    
+        Each interval [heights[i], heights[i+1]) receives an RH entry whose
+        frac equals values[i]. The final entry runs from heights[-1] to zmax
+        using default_above (if given) or values[-1] (if not).
+    
+        Parameters
+        ----------
+        species : int
+            Species index from module_parameters_ddw.f90.
+        heights : array-like
+            Measurement heights [m a.g.l.], at least 2 values.
+        values : array-like
+            Relative humidity fractions [0-1] at each height.
+        default_above : float or None
+            frac to use above heights[-1]. If None, values[-1] is used.
+        zmax : float
+            Upper ceiling of the last entry.
+        comment : str
+            Inline comment written to every entry.
+        """
+        heights = np.asarray(heights, dtype=float)
+        values  = np.asarray(values,  dtype=float)
+    
+        if len(heights) != len(values):
+            raise ValueError("heights and values must have the same length.")
+    
+        if len(heights) < 2:
+            raise ValueError("At least 2 height/value pairs are required.")
+    
+        order   = np.argsort(heights)
+        heights = heights[order]
+        values  = values[order]
+    
+        self.remove(species)
+    
+        for i in range(len(heights) - 1):
+            self.add(
+                species=species,
+                profile='RH',
+                params=[float(values[i])],
+                zmin=float(heights[i]),
+                zmax=float(heights[i + 1]),
+                comment=comment,
+            )
+    
+        top_frac = float(default_above) if default_above is not None else float(values[-1])
+        self.add(
+            species=species,
+            profile='RH',
+            params=[top_frac],
+            zmin=float(heights[-1]),
+            zmax=zmax,
+            comment=comment,
+        )
+    
+        return self
 
     @classmethod
     def from_file(cls, filepath) -> "SpeciesProfiles":
