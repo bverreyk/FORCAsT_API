@@ -520,7 +520,7 @@ class ForcastModel:
         write_line(f, data, "(itot, jmax, jmin, dfmin, clump, kmax) ! Number of leaf angle classes, maximum number of canopy layer (N/A), minimum number of anopy layers (N/A), thinnest leaf layer in terms of LAI units (N/A), clumping factor for canopy structur (1 is no clumping), ")
 
         data = f"{r['inrad']:.0f} {r['iwpm2']:.0f}"
-        write_line(f, data, "(inrad, iwpm2) ! Read incoming solar radiation (inrad=1), in [w m-2] (iwpm2=1) or in [umoles m-2 s-2] (iwpm2=0)")
+        write_line(f, data, "(inrad, iwpm2) ! Read incoming radiation (inrad=1 SW/PAR, 2 LW, 3 SW/PAR+LW), in [w m-2] (iwpm2=1) or in [umoles m-2 s-2] (iwpm2=0)")
 
         data = f"{r['ratiod']:.2f} {r['ration']:.2f}"
         write_line(f, data, "(ratiod, ration) ! Modifiers for incoming radiation (only important if inrad=0)")

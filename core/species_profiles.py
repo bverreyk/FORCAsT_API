@@ -231,6 +231,8 @@ class SpeciesProfiles:
         comment : str
             Inline comment written to the file.
         """
+        self.remove(species)
+
         heights = np.asarray(heights, dtype=float)
         values  = np.asarray(values,  dtype=float)
     
