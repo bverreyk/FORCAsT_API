@@ -3,6 +3,7 @@ import shutil
 import os
 from typing import List, Dict
 from datetime import datetime
+import warnings
 
 
 class DirectoryManager:
@@ -46,7 +47,7 @@ class DirectoryManager:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
 
         if not self.executable_path.exists():
-            raise FileNotFoundError(
+            warnings.warn(
                 f"FORCAsT executable not found at {self.executable_path}"
             )
 

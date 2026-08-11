@@ -667,7 +667,7 @@ class ForcastModel:
                 continue
     
             try:
-                df = pd.read_csv(file, delim_whitespace=True, header=None)
+                df = pd.read_csv(file, index_col = 0, delimiter = r"\s+")
             except Exception as e:
                 raise RuntimeError(f"Failed to read boundary file: {file}") from e
     
