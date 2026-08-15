@@ -220,8 +220,8 @@ class ForcastOutputReader:
         if self.model is not None:
             dataset.attrs.update({
                 "model": "FORCAsT",
-                "date_start": str(self.model.date_start)
-                if hasattr(self.model, "date_start") else None
+                "date_start": str(self.model.model_start)
+                if hasattr(self.model, "model_start") else None
             })
 
         return dataset
