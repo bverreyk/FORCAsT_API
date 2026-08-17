@@ -7,7 +7,7 @@ def get_string_dict(dictionary,key_order,name,precision=2):
         try:
             tmp = dictionary[key]
         except:
-            print(f"No {name} set for {key}, default to zero")
+            # print(f"No {name} set for {key}, default to zero")
             tmp = 0
         array.append(tmp)
     return get_string_array(array, precision=precision)
