@@ -29,7 +29,7 @@ class ProfileEntry:
     profile: str
     params:  List[float]
     zmin:    float = 0.0
-    zmax:    float = 9999.0
+    zmax:    float = 99999.0
     comment: str   = ""
 
     def __post_init__(self):
@@ -49,6 +49,11 @@ class ProfileEntry:
         if self.zmin >= self.zmax:
             raise ValueError(
                 f"zmin ({self.zmin}) must be less than zmax ({self.zmax})."
+            )
+        if self.species == 0 and self.profile == 'EXP':
+            raise ValueError(
+                "EXP is not a physically valid profile type for the "
+                "temperature sentinel (species=0)."
             )
 
     def to_line(self, data_width: int = 72) -> str:
@@ -101,7 +106,7 @@ class SpeciesProfiles:
         profile: str,
         params:  List[float],
         zmin:    float = 0.,
-        zmax:    float = 9999.,
+        zmax:    float = 99999.,
         comment: str   = "",
     ) -> "SpeciesProfiles":
         """Append a profile entry. Returns self for chaining."""
@@ -144,7 +149,7 @@ class SpeciesProfiles:
         profile: str,
         params:  List[float],
         zmin:    float = 0.,
-        zmax:    float = 9999.,
+        zmax:    float = 99999.,
         comment: str   = "",
     ) -> "SpeciesProfiles":
         """
@@ -174,7 +179,7 @@ class SpeciesProfiles:
             "#   RH      frac                frac * esat(T(z)) / p(z)  [H2O only]",
             "#",
             "# Species indices: module_parameters_ddw.f90",
-            "# ZMIN <= z < ZMAX  [m a.g.l.]  --  use 0. and 9999. for all levels",
+            "# ZMIN <= z < ZMAX  [m a.g.l.]  --  use 0. and 99999. for all levels",
             "#",
         ]
         lines = header + [e.to_line() for e in self.entries]
@@ -189,7 +194,7 @@ class SpeciesProfiles:
         profile_type: str = 'EXP',
         piecewise: bool = False,
         zmin: float = 0.,
-        zmax: float = 9999.,
+        zmax: float = 99999.,
         default_above: float = None,
         comment: str = '',
     ) -> "SpeciesProfiles":
@@ -333,7 +338,7 @@ class SpeciesProfiles:
         heights,
         values,
         default_above: float = None,
-        zmax: float = 9999.,
+        zmax: float = 99999.,
         comment: str = '',
     ) -> "SpeciesProfiles":
         """
@@ -396,6 +401,147 @@ class SpeciesProfiles:
     
         return self
 
+    def set_temperature_profile_from_observations(
+        self,
+        heights,
+        values,
+        lapse: float,
+        profile_type: str = 'LINEAR',
+        piecewise: bool = True,
+        zmin: float = 0.,
+        zmax: float = 99999.,
+        comment: str = 'Temperature profile from observations (overrides grndT0/lapse)',
+    ) -> "SpeciesProfiles":
+        """
+        Set the atmospheric temperature profile from observations,
+        overriding FORCAsT's default lapse-rate method
+        (grndT0 + lapse, see InitialConditions) for the OBSERVED range.
+
+        If the observed profile ends BELOW the model domain top
+        (zmax), the region above the highest observation continues
+        using the SAME lapse rate convention as the Fortran default
+        method (t(z) = T_top - lapse*(z - h_top)), starting from the
+        highest observed height/temperature rather than from
+        grndT0/ground level. If observations already extend to or
+        above zmax, no continuation entry is needed and none is added.
+
+        This is done entirely within the API -- entries are generated
+        and written to init_profiles.dat, so no change to the Fortran
+        model is required.
+
+        Internally uses species index 0 -- a sentinel reserved in the
+        Fortran init block (main.f) specifically for temperature, NOT
+        a real chemical species. See main.f's init_profiles.dat reading
+        loop for the corresponding Fortran-side handling.
+
+        Values MUST be in Kelvin, matching t(lev)'s native units.
+        lapse MUST be in the same convention/units as inputn's lapse
+        parameter (K/m, positive for temperature decreasing with
+        height) -- e.g. pass model.initial_conditions.lapse if using
+        the API's InitialConditions container.
+
+        IMPORTANT: all entries created here (observation-fit entries,
+        plus the lapse-continuation entry if one is added) are
+        inserted at the FRONT of the profile list, not appended -- so
+        any RH-type entries elsewhere in the file see the corrected
+        temperature rather than the original lapse-rate-from-ground
+        value.
+
+        Parameters
+        ----------
+        heights : array-like
+            Measurement heights [m a.g.l.].
+        values : array-like
+            Observed temperatures [K] at each height.
+        lapse : float
+            Atmospheric lapse rate [K/m], as used in inputn /
+            InitialConditions.lapse. Applied above the highest
+            observed height, only if needed (see above).
+        profile_type : str
+            'CONST' or 'LINEAR' only (EXP is rejected). Applies to the
+            OBSERVED range; any lapse-continuation entry always uses
+            LINEAR regardless of this setting.
+        piecewise : bool
+            If True, one entry per observation interval within the
+            observed range (see add_from_observations for semantics).
+        zmin : float
+            Lower bound for the observed-range fit (non-piecewise only).
+        zmax : float
+            Upper ceiling of the WHOLE profile. Default 99999 (top of
+            grid).
+        comment : str
+            Inline comment written to the generated entries.
+
+        Returns
+        -------
+        self, for chaining.
+        """
+        if profile_type.upper() == 'EXP':
+            raise ValueError(
+                "profile_type='EXP' is not physically meaningful for a "
+                "temperature profile. Use 'CONST' or 'LINEAR' instead."
+            )
+
+        heights = np.asarray(heights, dtype=float)
+        values = np.asarray(values, dtype=float)
+        order = np.argsort(heights)
+        heights = heights[order]
+        values = values[order]
+
+        h_top = float(heights[-1])
+        T_top = float(values[-1])
+
+        self.remove(species=0)
+        n_before = len(self.entries)
+
+        self.add_from_observations(
+            species=0,
+            heights=heights,
+            values=values,
+            profile_type=profile_type,
+            piecewise=piecewise,
+            zmin=zmin,
+            zmax=zmax,
+            default_above=None,
+            comment=comment,
+        )
+
+        # Drop/clip anything the fit produced above h_top -- if a
+        # lapse continuation is needed, it replaces this region; if
+        # not, this is a no-op (nothing extends above h_top when
+        # h_top >= zmax anyway).
+        trimmed = []
+        for e in self.entries[n_before:]:
+            if e.zmin >= h_top:
+                continue
+            if e.zmax > h_top:
+                e.zmax = h_top
+            trimmed.append(e)
+        self.entries = self.entries[:n_before] + trimmed
+
+        # Lapse-rate continuation above the highest observation --
+        # only needed if the observed profile actually ends below the
+        # model domain top. If observations already extend to/above
+        # zmax, there's no gap to fill and nothing more to add.
+        if h_top < zmax:
+            # T(z) = T_top - lapse*(z - h_top) = (T_top + lapse*h_top) - lapse*z
+            c0 = T_top + lapse * h_top
+            c1 = -lapse
+            self.add(
+                species=0,
+                profile='LINEAR',
+                params=[c0, c1],
+                zmin=h_top,
+                zmax=zmax,
+                comment=f"{comment} -- lapse-rate continuation above {h_top} m",
+            )
+
+        new_entries = self.entries[n_before:]
+        remaining = self.entries[:n_before]
+        self.entries = new_entries + remaining
+
+        return self
+
     @classmethod
     def from_file(cls, filepath) -> "SpeciesProfiles":
         """Parse an existing init_profiles.dat and return a SpeciesProfiles instance."""
@@ -455,7 +601,7 @@ class SpeciesProfiles:
         sp.add(397, 'EXP',    [1.253e-9, 0.001],  zmin=34.,   zmax=300.,   comment="LNO2=397: 34-300 m")
         sp.add(397, 'CONST',  [2.0e-10],           zmin=300.,  zmax=600.,   comment="LNO2=397: 300-600 m")
         sp.add(397, 'CONST',  [1.0e-10],           zmin=600.,  zmax=1500.,  comment="LNO2=397: 600-1500 m")
-        sp.add(397, 'CONST',  [5.0e-11],           zmin=1500., zmax=9999.,  comment="LNO2=397: >1500 m")
+        sp.add(397, 'CONST',  [5.0e-11],           zmin=1500., zmax=99999.,  comment="LNO2=397: >1500 m")
         sp.add(402, 'EXP',    [3.0e-12, 0.001],               comment="LNO=402: slow decay")
         sp.add(400, 'EXP',    [2.1e-12, 0.01],                comment="LNO3=400")
         sp.add(191, 'EXP',    [1.542e-10, 0.01],              comment="LHONO=191")
